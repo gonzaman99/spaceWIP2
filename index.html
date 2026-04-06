@@ -161,7 +161,7 @@ const planetImg=new Image();
 planetImg.src='./planet1.jpg';
 const PLANET_WORLD_X=8400; // 24000 * 0.35
 const PLANET_WORLD_Y=6000; // 20000 * 0.30
-const PLANET_RADIUS=1800;          // visual size in world units
+const PLANET_RADIUS=3600;          // visual size in world units
 const PLANET_PARALLAX=0.08;        // 0=locked to screen, 1=moves with world
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -1452,7 +1452,7 @@ function drawPlanetLayer(){
   // Parallax offset — planet moves at a fraction of camera movement
   const px=(PLANET_WORLD_X-cam.x)*PLANET_PARALLAX+VW/2;
   const py=(PLANET_WORLD_Y-cam.y)*PLANET_PARALLAX+VH/2;
-  const r=PLANET_RADIUS*cam.zoom*0.18; // scale slightly with zoom but stay huge
+  const r=PLANET_RADIUS*cam.zoom*0.12; // scale slightly with zoom but stay huge
   pCtx.save();
   pCtx.beginPath();
   pCtx.arc(px,py,r,0,Math.PI*2);
