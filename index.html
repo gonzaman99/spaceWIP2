@@ -1451,8 +1451,8 @@ function drawPlanetLayer(){
   pCtx.clearRect(0,0,VW,VH);
   if(!planetImg.complete||!planetImg.naturalWidth)return;
   // Parallax offset — planet moves at a fraction of camera movement
-  const px=(PLANET_WORLD_X-cam.x)*PLANET_PARALLAX+VW/2;
-  const py=(PLANET_WORLD_Y-cam.y)*PLANET_PARALLAX+VH/2;
+  const px=(PLANET_WORLD_X-cam.x)*PLANET_PARALLAX*cam.zoom+VW/2;
+const py=(PLANET_WORLD_Y-cam.y)*PLANET_PARALLAX*cam.zoom+VH/2;
   const r=PLANET_RADIUS*cam.zoom*0.12; // scale slightly with zoom but stay huge
   pCtx.save();
   pCtx.beginPath();
