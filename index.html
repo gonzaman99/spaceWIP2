@@ -88,6 +88,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#050a14;position:fix
   <div id="main">
     <div id="map-wrap">
       <canvas id="c-stars"></canvas>
+      <canvas id="c-planet"></canvas>
       <canvas id="c-grid"></canvas>
       <canvas id="c-game"></canvas>
       <div id="hud-hint">Drag to select · Right-click to move · Scroll to zoom · Middle-drag / WASD to pan</div>
@@ -152,8 +153,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:#050a14;position:fix
 <script>
 (function(){
 const mapEl=document.getElementById('map-wrap');
-const cS=document.getElementById('c-stars'),cG=document.getElementById('c-grid'),cGame=document.getElementById('c-game');
-const sCtx=cS.getContext('2d'),gCtx=cG.getContext('2d'),ctx=cGame.getContext('2d');
+const cS=document.getElementById('c-stars'),cPlanet=document.getElementById('c-planet'),cG=document.getElementById('c-grid'),cGame=document.getElementById('c-game');
+const sCtx=cS.getContext('2d'),pCtx=cPlanet.getContext('2d'),gCtx=cG.getContext('2d'),ctx=cGame.getContext('2d');
+
+// ── Planet setup ───────────────────────────────────────────────────────────
+const planetImg=new Image();
+planetImg.src='./planet1.jpg';
+const PLANET_WORLD_X=WORLD_W*0.35; // position in world space
+const PLANET_WORLD_Y=WORLD_H*0.30;
+const PLANET_RADIUS=1800;          // visual size in world units
+const PLANET_PARALLAX=0.08;        // 0=locked to screen, 1=moves with world
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const CELL=40,OVERRIDE_DUR=5,DOCK_DIST=24,MINE_RATE=0.045,DRONE_COST=150,RESPAWN_TIME=18,F_CARGO_MAX=350;
@@ -769,7 +778,7 @@ function resize(){
   VW=mapEl.offsetWidth||mapEl.clientWidth;VH=mapEl.offsetHeight||mapEl.clientHeight;
   if(VW===0)VW=window.innerWidth-200;
   if(VH===0)VH=window.innerHeight-64;
-  [cS,cG,cGame].forEach(c=>{c.width=VW;c.height=VH;c.style.width=VW+'px';c.style.height=VH+'px';});
+  [cS,cPlanet,cG,cGame].forEach(c=>{c.width=VW;c.height=VH;c.style.width=VW+'px';c.style.height=VH+'px';});
   if(dronesArr.length===0){
     const fx=flagship.x,fy=flagship.y;
     for(let i=0;i<3;i++) dronesArr.push(makeDrone(`d${i+1}`,fx+80+i*60,fy+40+i*30));
@@ -1435,7 +1444,28 @@ function updateWASD(dt){
 
 // ── Drawing ────────────────────────────────────────────────────────────────
 let twinklePhase=0;
-
+// ── Planet parallax layer ──────────────────────────────────────────────────
+function drawPlanetLayer(){
+  cPlanet.width=VW;cPlanet.height=VH;
+  pCtx.clearRect(0,0,VW,VH);
+  if(!planetImg.complete||!planetImg.naturalWidth)return;
+  // Parallax offset — planet moves at a fraction of camera movement
+  const px=(PLANET_WORLD_X-cam.x)*PLANET_PARALLAX+VW/2;
+  const py=(PLANET_WORLD_Y-cam.y)*PLANET_PARALLAX+VH/2;
+  const r=PLANET_RADIUS*cam.zoom*0.18; // scale slightly with zoom but stay huge
+  pCtx.save();
+  pCtx.beginPath();
+  pCtx.arc(px,py,r,0,Math.PI*2);
+  pCtx.clip();
+  pCtx.drawImage(planetImg,px-r,py-r,r*2,r*2);
+  // Atmospheric glow rim
+  const grad=pCtx.createRadialGradient(px,py,r*0.75,px,py,r);
+  grad.addColorStop(0,'rgba(0,0,0,0)');
+  grad.addColorStop(1,'rgba(10,40,80,0.7)');
+  pCtx.fillStyle=grad;
+  pCtx.fill();
+  pCtx.restore();
+}
 function drawStarsLayer(){
   sCtx.clearRect(0,0,VW,VH);
   const parallax=0.02; // stars scroll at 8% of camera speed — feel far away
@@ -2244,6 +2274,7 @@ moveMiningCarrier(dt);
 
   // Draw
   drawStarsLayer();
+  drawPlanetLayer();
   drawGridLayer();
 
   ctx.clearRect(0,0,VW,VH);
