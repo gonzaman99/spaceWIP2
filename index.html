@@ -157,12 +157,11 @@ const cS=document.getElementById('c-stars'),cPlanet=document.getElementById('c-p
 const sCtx=cS.getContext('2d'),pCtx=cPlanet.getContext('2d'),gCtx=cG.getContext('2d'),ctx=cGame.getContext('2d');
 
 // ── Planet setup ───────────────────────────────────────────────────────────
-const planetImg=new Image();
-planetImg.src='./planet1.jpg';
-const PLANET_WORLD_X=8400; // 24000 * 0.35
-const PLANET_WORLD_Y=6000; // 20000 * 0.30
-const PLANET_RADIUS=3600;          // visual size in world units
-const PLANET_PARALLAX=0.4;        // 0=locked to screen, 1=moves with world
+// Procedural planet — no external image needed
+const PLANET_WORLD_X=8400;
+const PLANET_WORLD_Y=6000;
+const PLANET_RADIUS=3600;
+const PLANET_PARALLAX=0.4;
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const CELL=40,OVERRIDE_DUR=5,DOCK_DIST=24,MINE_RATE=0.045,DRONE_COST=150,RESPAWN_TIME=18,F_CARGO_MAX=350;
@@ -183,7 +182,7 @@ const MC_CARGO_MAX  = 8000;
 const MC_HULL       = 800;
 const MC_SHIELDS    = 400;
 const MC_RELOC_TIME = 12;
-const WORLD_W=24000,WORLD_H=20000;  // 10x map
+const WORLD_W=80000,WORLD_H=80000;  // large square map
 
 // Flagship physics constants — tank-style (no lateral drift)
 const F_MAX_SPEED   = 3.2;    // world units/frame at 60fps
@@ -228,7 +227,7 @@ let plasmaReloading=false;  // full mag reload in progress
 let plasmaReloadTimer=0;    // mag reload countdown
 let mouseWorld={x:0,y:0};  // live world-space cursor position
 
-const cam={x:WORLD_W/2,y:WORLD_H/2,zoom:1,zoomTarget:1,minZoom:0.04,maxZoom:3,panTx:null,panTy:null,panSpeed:4,
+const cam={x:WORLD_W/2,y:WORLD_H/2,zoom:0.008,zoomTarget:0.008,minZoom:0.002,maxZoom:0.15,
   panVx:0,panVy:0};  // middle-drag inertia velocity (world units/s)
 
 // WASD key state
@@ -785,13 +784,15 @@ function resize(){
     for(let i=0;i<3;i++) dronesArr.push(makeDrone(`d${i+1}`,fx+80+i*60,fy+40+i*30));
   }
   units=[flagship,miningCarrier,...dronesArr];
-  cam.x=flagship.x;cam.y=flagship.y;cam.zoom=0.25;
+  cam.x=flagship.x;cam.y=flagship.y;cam.zoom=0.008;cam.zoomTarget=0.008;
 }
 
 function clampCam(){
   const hw=VW/2/cam.zoom,hh=VH/2/cam.zoom;
-  cam.x=Math.max(hw,Math.min(WORLD_W-hw,cam.x));
-  cam.y=Math.max(hh,Math.min(WORLD_H-hh,cam.y));
+  if(hw>=WORLD_W/2){cam.x=WORLD_W/2;}
+  else{cam.x=Math.max(hw,Math.min(WORLD_W-hw,cam.x));}
+  if(hh>=WORLD_H/2){cam.y=WORLD_H/2;}
+  else{cam.y=Math.max(hh,Math.min(WORLD_H-hh,cam.y));}
 }
 
 // ── Drone helpers ──────────────────────────────────────────────────────────
@@ -1447,38 +1448,110 @@ function updateWASD(dt){
 let twinklePhase=0;
 // ── Planet parallax layer ──────────────────────────────────────────────────
 function drawPlanetLayer(){
-  cPlanet.width=VW;cPlanet.height=VH;
+  if(!VW||!VH||!isFinite(VW)||!isFinite(VH))return;
   pCtx.clearRect(0,0,VW,VH);
-  if(!planetImg.complete||!planetImg.naturalWidth)return;
-  // Parallax offset — planet moves at a fraction of camera movement
+  // Parallax offset
   const px=(PLANET_WORLD_X-cam.x)*PLANET_PARALLAX*cam.zoom+VW/2;
-const py=(PLANET_WORLD_Y-cam.y)*PLANET_PARALLAX*cam.zoom+VH/2;
-  const r=PLANET_RADIUS*cam.zoom*0.06; // scale slightly with zoom but stay huge
+  const py=(PLANET_WORLD_Y-cam.y)*PLANET_PARALLAX*cam.zoom+VH/2;
+  const r=PLANET_RADIUS*cam.zoom*0.06;
+  if(!isFinite(px)||!isFinite(py)||!isFinite(r)||r<1)return;
+  // Cull if completely off-screen
+  if(px+r<-50||px-r>VW+50||py+r<-50||py-r>VH+50)return;
+
   pCtx.save();
-  pCtx.beginPath();
-  pCtx.arc(px,py,r,0,Math.PI*2);
-  pCtx.clip();
-  pCtx.drawImage(planetImg,px-r,py-r,r*2,r*2);
-  // Atmospheric glow rim
-  const grad=pCtx.createRadialGradient(px,py,r*0.75,px,py,r);
-  grad.addColorStop(0,'rgba(0,0,0,0)');
-  grad.addColorStop(1,'rgba(10,40,80,0.7)');
-  pCtx.fillStyle=grad;
-  pCtx.fill();
+  pCtx.beginPath();pCtx.arc(px,py,r,0,Math.PI*2);pCtx.clip();
+
+  // Deep ocean base
+  const base=pCtx.createRadialGradient(px-r*0.3,py-r*0.3,r*0.05,px,py,r);
+  base.addColorStop(0,'#1a4a7a');
+  base.addColorStop(0.45,'#0d2a50');
+  base.addColorStop(0.75,'#091828');
+  base.addColorStop(1,'#040d14');
+  pCtx.fillStyle=base;pCtx.fillRect(px-r,py-r,r*2,r*2);
+
+  // Continent bands — simple noise-free blobs using trig
+  const bands=[
+    {ox:-0.15,oy:-0.22,rx:0.55,ry:0.32,a:0.28,c:'#1a5a30'},
+    {ox: 0.30,oy: 0.10,rx:0.38,ry:0.44,a:0.24,c:'#1a5535'},
+    {ox:-0.40,oy: 0.28,rx:0.30,ry:0.28,a:0.22,c:'#224428'},
+    {ox: 0.05,oy:-0.42,rx:0.22,ry:0.18,a:0.20,c:'#1e4e2a'},
+    {ox:-0.18,oy: 0.48,rx:0.45,ry:0.18,a:0.18,c:'#1a5030'},
+  ];
+  bands.forEach(b=>{
+    pCtx.save();
+    pCtx.beginPath();
+    pCtx.ellipse(px+b.ox*r,py+b.oy*r,b.rx*r,b.ry*r,b.ox*0.8,0,Math.PI*2);
+    pCtx.fillStyle=b.c;
+    pCtx.globalAlpha=b.a+0.05*Math.sin(T*0.3+b.ox*10);
+    pCtx.fill();
+    pCtx.restore();
+  });
+
+  // Ice caps
+  [[0,-1],[0,1]].forEach(([,sy])=>{
+    const ig=pCtx.createRadialGradient(px,py+sy*r,0,px,py+sy*r,r*0.35);
+    ig.addColorStop(0,'rgba(200,230,255,0.55)');
+    ig.addColorStop(1,'rgba(160,200,255,0)');
+    pCtx.beginPath();pCtx.arc(px,py+sy*r,r*0.35,0,Math.PI*2);
+    pCtx.fillStyle=ig;pCtx.fill();
+  });
+
+  // Cloud layer — 3 horizontal wisps
+  [
+    {oy:-0.12,w:1.6,h:0.12,a:0.18},
+    {oy: 0.08,w:1.2,h:0.09,a:0.13},
+    {oy: 0.30,w:1.4,h:0.11,a:0.15},
+  ].forEach(cl=>{
+    const cg=pCtx.createRadialGradient(px,py+cl.oy*r,0,px,py+cl.oy*r,r*cl.h*3);
+    cg.addColorStop(0,`rgba(210,230,255,${cl.a})`);
+    cg.addColorStop(1,'rgba(180,210,255,0)');
+    pCtx.save();
+    pCtx.scale(cl.w,1);
+    pCtx.beginPath();pCtx.arc(px/cl.w,py+cl.oy*r,r*cl.h*3,0,Math.PI*2);
+    pCtx.fillStyle=cg;pCtx.fill();
+    pCtx.restore();
+  });
+
+  // Specular highlight (sunlit upper-left)
+  const spec=pCtx.createRadialGradient(px-r*0.38,py-r*0.38,0,px-r*0.38,py-r*0.38,r*0.72);
+  spec.addColorStop(0,'rgba(180,220,255,0.18)');
+  spec.addColorStop(1,'rgba(100,160,255,0)');
+  pCtx.beginPath();pCtx.arc(px,py,r,0,Math.PI*2);
+  pCtx.fillStyle=spec;pCtx.fill();
+
+  pCtx.restore();
+
+  // Atmospheric rim glow (outside clip so it bleeds outward)
+  const atmos=pCtx.createRadialGradient(px,py,r*0.88,px,py,r*1.18);
+  atmos.addColorStop(0,'rgba(40,120,200,0.0)');
+  atmos.addColorStop(0.4,'rgba(30,100,180,0.35)');
+  atmos.addColorStop(0.8,'rgba(10,50,120,0.18)');
+  atmos.addColorStop(1,'rgba(5,20,60,0)');
+  pCtx.beginPath();pCtx.arc(px,py,r*1.18,0,Math.PI*2);
+  pCtx.fillStyle=atmos;pCtx.fill();
+
+  // Terminator shadow (dark crescent on right side)
+  const shadow=pCtx.createRadialGradient(px+r*0.55,py,r*0.3,px+r*0.5,py,r*1.05);
+  shadow.addColorStop(0,'rgba(0,0,0,0)');
+  shadow.addColorStop(0.6,'rgba(0,5,15,0.45)');
+  shadow.addColorStop(1,'rgba(0,0,0,0)');
+  pCtx.save();
+  pCtx.beginPath();pCtx.arc(px,py,r,0,Math.PI*2);pCtx.clip();
+  pCtx.beginPath();pCtx.arc(px,py,r,0,Math.PI*2);
+  pCtx.fillStyle=shadow;pCtx.fill();
   pCtx.restore();
 }
 function drawStarsLayer(){
   sCtx.clearRect(0,0,VW,VH);
-  const parallax=0.02; // stars scroll at 8% of camera speed — feel far away
+  const parallax=0.02;
   stars.forEach(s=>{
     const f=.72+.28*Math.sin(twinklePhase*s.tw+s.ph);
     const r=s.col?s.col[0]:185, g=s.col?s.col[1]:215, b=s.col?s.col[2]:255;
-    // offset star position slightly with camera for parallax depth
-    const px=(s.sx*VW - cam.x*parallax)%VW;
-    const py=(s.sy*VH - cam.y*parallax)%VH;
-    // wrap around screen edges so stars tile seamlessly
-    const sx=px<0?px+VW:px;
-    const sy=py<0?py+VH:py;
+    // Use frac() style tiling: offset by camera, then wrap within [0,1] before scaling to screen
+    const rawX = s.sx - (cam.x * parallax / VW);
+    const rawY = s.sy - (cam.y * parallax / VH);
+    const sx = ((rawX % 1) + 1) % 1 * VW;
+    const sy = ((rawY % 1) + 1) % 1 * VH;
     sCtx.beginPath();sCtx.arc(sx,sy,s.r,0,Math.PI*2);
     sCtx.fillStyle=`rgba(${r},${g},${b},${s.a*f})`;sCtx.fill();
   });
@@ -1669,6 +1742,7 @@ function drawRetroFlames(sz, flare){
 
 // ── Drone thruster drawing ─────────────────────────────────────────────────
 function drawDroneThruster(d, sc, r){
+  if(!isFinite(sc.x)||!isFinite(sc.y))return;
   const isMoving=d.state==='approaching'||d.state==='docking'||(d.overrideTimer>0&&d.moving);
   if(!isMoving)return;
   const dx=d.tx-d.x,dy=d.ty-d.y,dist=Math.hypot(dx,dy);
@@ -1775,6 +1849,7 @@ function drawFlagship(){
 
 function drawDrone(d){
   const sc=worldToScreen(d.x,d.y);
+  if(!isFinite(sc.x)||!isFinite(sc.y)||!isFinite(d.x)||!isFinite(d.y))return;
   const r=8*cam.zoom,sel=selectedIds.has(d.id);
   const full=d.cargo>=d.cargoMax,mining=d.state==='mining',docking=d.state==='docking',ovrd=d.overrideTimer>0;
 
@@ -1954,11 +2029,14 @@ cGame.addEventListener('mouseleave',()=>{dragStart=null;dragCur=null;isDrag=fals
 
 cGame.addEventListener('wheel',e=>{
   e.preventDefault();
-  const p=getPos(e);const wp=screenToWorld(p.sx,p.sy);
+  const p=getPos(e);
+  // Always compute anchor from current ACTUAL zoom, not zoomTarget
+  const wp=screenToWorld(p.sx,p.sy);
   const factor=e.deltaY<0?1.15:1/1.15;
   cam.zoomTarget=Math.max(cam.minZoom,Math.min(cam.maxZoom,cam.zoomTarget*factor));
-  cam.zoomAnchorX=wp.x;
-  cam.zoomAnchorY=wp.y;
+  // Only update anchor if it's a fresh scroll (zoom was stable) or same direction
+  cam.zoomAnchorX=cam.x+(wp.x-cam.x)*(cam.zoom/cam.zoomTarget);
+  cam.zoomAnchorY=cam.y+(wp.y-cam.y)*(cam.zoom/cam.zoomTarget);
   clampCam();
 },{passive:false});
 
@@ -2020,7 +2098,7 @@ window.focusUnit=function(id){
 };
 
 // ── Fleet list — stable DOM, patched each frame (no full rebuild while mining) ──
-let _lastFleetStructure='';
+let _lastFleetStructure='__init__';
 function renderFleetList(){
   const list=document.getElementById('fleet-list');
 
@@ -2263,6 +2341,9 @@ function loop(ts){
     }
     cam.zoom=newZoom;
     clampCam();
+  } else {
+    cam.zoomAnchorX=undefined;
+    cam.zoomAnchorY=undefined;
   }
 
   // Move flagship with physics
